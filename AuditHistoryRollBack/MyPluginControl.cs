@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
@@ -191,6 +191,7 @@ namespace AuditHistoryRollBack
                     AuditDetailCollection auditDetailCollection = changeResponse.AuditDetailCollection;
 
                     Entity entity = Service.Retrieve(entitiesList.SelectedItem.ToString(), guid, new ColumnSet(true));
+                    TargetEntity = new Entity(entity.LogicalName, entity.Id);
 
                     foreach (var attrAuditDetail in auditDetailCollection.AuditDetails)
                     {
@@ -202,7 +203,6 @@ namespace AuditHistoryRollBack
 
                             var newValueEntity = attributeDetail.NewValue;
                             var oldValueEntity = attributeDetail.OldValue;
-                            TargetEntity = new Entity(oldValueEntity.LogicalName, oldValueEntity.Id);
 
                             var action = auditRecord.FormattedValues["action"];
                             if (Array.Exists(ValidActions, x => x == action))
