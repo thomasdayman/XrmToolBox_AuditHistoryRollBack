@@ -422,7 +422,13 @@ namespace AuditHistoryRollBack
                 Work = (bw, e) => {
                     try
                     {
-                        foreach (DataGridViewRow auditinfo in dataGridView1.SelectedRows)
+                        List<DataGridViewRow> rows =
+                            (from DataGridViewRow row in dataGridView1.SelectedRows
+                            where !row.IsNewRow
+                            orderby row.Index
+                            select row).ToList<DataGridViewRow>();
+
+                        foreach (DataGridViewRow auditinfo in rows)
                         {
                             var type = auditinfo.Cells[7].Value;
                             var field = auditinfo.Cells[4].Value.ToString();
@@ -431,8 +437,9 @@ namespace AuditHistoryRollBack
                             var fieldmetadata = auditinfo.Cells[8].Value.ToString();
                             var lookupId = auditinfo.Cells[9].Value.ToString();
                             UpdateAudit(Service, changeRequest, type, field, newValue, oldValue, fieldmetadata, lookupId);
+                            //Service.Update(changeRequest);
                         }
-                        Service.Update(changeRequest);
+                        //Service.Update(changeRequest);
                     }
                     catch (InvalidPluginExecutionException ex)
                     {
@@ -453,6 +460,7 @@ namespace AuditHistoryRollBack
                 },
                 PostWorkCallBack = (e) =>
                 {
+                    Thread.Sleep(500);
                     LoadAuditHistory();
                 }
             }) ;
@@ -500,6 +508,7 @@ namespace AuditHistoryRollBack
             {
                 entity.Attributes[field] = null;
             }
+            Service.Update(entity);
         }     
 
         private void HideOldAuditRecords()
