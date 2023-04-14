@@ -4,8 +4,16 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+// ============================================================================
+// ============================================================================
+// ============================================================================
 namespace AuditHistoryRollBack
 {
+
+
+    // ============================================================================
+    // ============================================================================
+    // ============================================================================
     /// <summary>
     /// This class can help you to store settings for your plugin
     /// </summary>
@@ -14,6 +22,9 @@ namespace AuditHistoryRollBack
     /// </remarks>
     public class Settings
     {
-        public string LastUsedOrganizationWebappUrl { get; set; }
+        public string LastUsedOrganizationWebappUrl { get; set; } = string.Empty;
+        public string LastUsedEntity { get; set; } = string.Empty;
+        public bool AutoCopyGuidFromClipboard { get; set; } = true;
+        public bool ShowNewestAuditsOnly { get; set; } = false;
     }
 }

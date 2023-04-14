@@ -1,78 +1,170 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Drawing;
 using System.Data;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 using XrmToolBox.Extensibility;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.Xrm.Sdk;
 using McTools.Xrm.Connection;
 using Microsoft.Crm.Sdk.Messages;
-using Microsoft.Xrm.Sdk.Client;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
-using System.Windows.Data;
 using System.ServiceModel;
 using System.Threading;
 
+
+// ============================================================================
+// ============================================================================
+// ============================================================================
 namespace AuditHistoryRollBack
 {
+
+
+    // ============================================================================
+    // ============================================================================
+    // ============================================================================
     public partial class MyPluginControl : PluginControlBase
     {
-        private Settings mySettings;
-        private string[] ValidActions =
-            { "Update",
-              "Activate",
-              "Deactivate",
-              "Assign"
-            }; //https://docs.microsoft.com/en-us/dynamics365/customer-engagement/web-api/audit?view=dynamics-ce-odata-9
+        internal Settings mySettings = null;
         private List<AuditRecord> AuditRecords = new List<AuditRecord>();
         private List<string> newestAuditRecords = new List<string>();
         private List<int> oldAuditRecords = new List<int>();
         private BindingSource bindingSource;
         private Entity TargetEntity;
 
+
+        private string[] ValidActions =
+            { "Update",
+              "Activate",
+              "Deactivate",
+              "Assign"
+            };
+
+
+        // ============================================================================
         public MyPluginControl()
         {
             InitializeComponent();
         }
 
+        // ============================================================================
         private void MyPluginControl_Load(object sender, EventArgs e)
         {
-            // Loads or creates the settings for the plugin
-            if (!SettingsManager.Instance.TryLoad(GetType(), out mySettings))
-            {
-                mySettings = new Settings();
+            if (!AuthTypeCheck()) return;
 
-                LogWarning("Settings not found => a new settings file has been created!");
+            LoadSettings();
+            LoadEntities();
+        }
+
+
+        // ============================================================================
+        internal bool AuthTypeCheck()
+        {
+            if (ConnectionDetail?.AuthType != null &&
+                ConnectionDetail?.NewAuthType != null &&
+                ConnectionDetail.AuthType != Microsoft.Xrm.Sdk.Client.AuthenticationProviderType.OnlineFederation &&
+                (
+                    ConnectionDetail.NewAuthType != Microsoft.Xrm.Tooling.Connector.AuthenticationType.AD ||
+                    ConnectionDetail.NewAuthType != Microsoft.Xrm.Tooling.Connector.AuthenticationType.OAuth ||
+                    ConnectionDetail.NewAuthType != Microsoft.Xrm.Tooling.Connector.AuthenticationType.ClientSecret
+                ))
+            {
+                MessageBox.Show("Your connection type is not supported, Please connect using SDK Login Control to use this Tool.");
+                return false;
+            }
+            return true;
+        }
+
+        // ============================================================================
+        /// <summary>Loads configurations from file</summary>
+        private void LoadSettings()
+        {
+            mySettings = null;
+            
+            LogInfo("Loading settings now...");
+
+            try
+            {
+                SettingsManager.Instance.TryLoad(
+                    typeof(MyPluginControl), 
+                    out mySettings);
+
+                showNewestValues.Checked =
+                    mySettings.ShowNewestAuditsOnly;
+
+                autoCopyGuidFromClipboard.Checked =
+                    mySettings.AutoCopyGuidFromClipboard;
+
+            }
+            catch (InvalidOperationException) 
+            {
+                LogWarning("Settings could not be loaded!");
             }
 
-            else
+            if (mySettings == null)
             {
-                LogInfo("Settings found and loaded");
+                mySettings = new Settings();
+                SaveSettings();
+                LogWarning("A new settings-file was created");
+            }
+           
+        }
+
+
+        // ============================================================================
+        private void SaveSettings()
+        {
+            if (mySettings != null)
+            {
+                mySettings.AutoCopyGuidFromClipboard =
+                    autoCopyGuidFromClipboard.Checked;
+
+                if (entitiesList.SelectedIndex != -1)
+                {
+                    mySettings.LastUsedEntity =
+                        entitiesList.SelectedItem.ToString();
+                }
+
+                SettingsManager.Instance.Save(
+                    typeof(MyPluginControl),
+                    mySettings);
+
+                LogInfo("Settings-file was saved.");
+                {
+                    mySettings.AutoCopyGuidFromClipboard =
+                   autoCopyGuidFromClipboard.Checked;
+
+                    if (entitiesList.SelectedIndex != -1)
+                    {
+                        mySettings.LastUsedEntity =
+                            entitiesList.SelectedItem.ToString();
+                    }
+
+                    SettingsManager.Instance.Save(
+                        typeof(MyPluginControl),
+                        mySettings);
+                }
             }
         }
 
+
+        // ============================================================================
         private void tsbClose_Click(object sender, EventArgs e)
         {
             CloseTool();
         }
 
-        /// <summary>
-        /// This event occurs when the plugin is closed
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
+
+        // ============================================================================
         private void MyPluginControl_OnCloseTool(object sender, EventArgs e)
         {
-            // Before leaving, save the settings
-            SettingsManager.Instance.Save(GetType(), mySettings);
+            LogInfo("The plugin {0} is shutting down.", ToString());
+            SaveSettings();
         }
 
+        // ============================================================================
         /// <summary>
         /// This event occurs when the connection has been updated in XrmToolBox
         /// </summary>
@@ -87,68 +179,101 @@ namespace AuditHistoryRollBack
             }
         }
 
+        // ============================================================================
         private void WhoAmI()
         {
             Service.Execute(new WhoAmIRequest());
         }
 
-        public class AuditRecord
-        {
-            public Object AuditId { get; set; }
-            public Object CreatedOn { get; set; }
-            public string UserId { get; set; }
-            public string Action { get; set; }
-            public string Field { get; set; }
-            public string OldValue { get; set; }
-            public string NewValue { get; set; }
-            public object Type { get; set; }
-            public string FieldMetaData { get; set; }
-            public string LookupId { get; set; }
 
-        }
-
+        // ============================================================================
         public void LoadEntities()
         {
+            LogInfo("Loading entites now...");
+
             if (entitiesList != null)
             {
                 entitiesList.Items.Clear();
             }
+
             disableButtons();
+
             WorkAsync(new WorkAsyncInfo
             {
                 Message = "Loading Entities...",
-                Work = (bw, e) =>
+                Work = (bw, args) =>
                 {
-                    RetrieveAllEntitiesRequest request = new RetrieveAllEntitiesRequest
+                    try
                     {
-                        EntityFilters = EntityFilters.Entity,
-                        RetrieveAsIfPublished = true
+                        RetrieveAllEntitiesRequest request = new RetrieveAllEntitiesRequest
+                        {
+                            EntityFilters = EntityFilters.Entity,
+                            RetrieveAsIfPublished = true
 
-                    };
-                    RetrieveAllEntitiesResponse response = (RetrieveAllEntitiesResponse)Service.Execute(request);
+                        };
+
+                        args.Result = (RetrieveAllEntitiesResponse)Service.Execute(request);
+
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(ex.Message + " | " + ex?.InnerException?.Message);
+                    }
+
+                },
+                PostWorkCallBack = (args) =>
+                {
+                    if (args.Error != null)
+                    {
+                        MessageBox.Show(
+                            args.Error.ToString(),
+                            "Error",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Error);
+                    }
+
+                    var response = (RetrieveAllEntitiesResponse)args.Result;
+                    var counter = 0;
 
                     foreach (EntityMetadata entity in response.EntityMetadata)
                     {
                         if (entity.IsAuditEnabled.Value == true)
                         {
                             entitiesList.Items.Add(entity.LogicalName);
+                            counter++;
                         }
                     }
-                },
-                PostWorkCallBack = (e) =>
-                {
+
+                    LogInfo("Added {0} entities with enabled audit to the list.", counter);
+
                     entitiesList.Sorted = true;
-                    entitiesList.SelectedIndex = 0;
                     enableButtons();
+
+                    // apply settings of last used entity
+                    var index =
+                    entitiesList.FindString(
+                        mySettings.LastUsedEntity);
+
+                    LogInfo("Found last-used-entity at index: " + mySettings.LastUsedEntity + " -> " + index);
+
+                    if (index != -1)
+                    {
+                        entitiesList.SelectedIndex = index;
+                    }
+
                 }
             });
         }
 
+
+        // ============================================================================
         private void LoadAuditHistoryButton(object sender, EventArgs e)
         {
             LoadAuditHistory();
         }
 
+
+        // ============================================================================
         private void LoadAuditHistory()
         {
             if (entitiesList.SelectedItem != null)
@@ -161,6 +286,7 @@ namespace AuditHistoryRollBack
                     Message = "Loading Audit History...",
                     Work = (bw, d) => {
                         LoadAuditHistoryLogic();
+                        HideOldAuditRecords();
                     },
                     PostWorkCallBack = (d) =>
                     {
@@ -175,6 +301,8 @@ namespace AuditHistoryRollBack
             }
         }
 
+
+        // ============================================================================
         private void LoadAuditHistoryLogic()
         {
             if (Service != null)
@@ -182,13 +310,19 @@ namespace AuditHistoryRollBack
                 RetrieveRecordChangeHistoryRequest changeRequest = new RetrieveRecordChangeHistoryRequest();
                 try
                 {
-                    Guid guid = TrimGuid(recordGuid.Text);
+                    Guid guid;
+                    if (!Guid.TryParse(recordGuid.Text, out guid))
+                    {
+                        return;
+                    }
 
                     changeRequest.Target = new EntityReference(entitiesList.SelectedItem.ToString(), guid);
                     RetrieveRecordChangeHistoryResponse changeResponse =
                     (RetrieveRecordChangeHistoryResponse)Service.Execute(changeRequest);
 
                     AuditDetailCollection auditDetailCollection = changeResponse.AuditDetailCollection;
+
+                    LogInfo("Retrieved {0} audit entires for this record.", auditDetailCollection.Count);
 
                     Entity entity = Service.Retrieve(entitiesList.SelectedItem.ToString(), guid, new ColumnSet(true));
                     TargetEntity = new Entity(entity.LogicalName, entity.Id);
@@ -208,7 +342,7 @@ namespace AuditHistoryRollBack
                             if (Array.Exists(ValidActions, x => x == action))
                             {
 
-                                foreach (KeyValuePair<String, object> attribute in attributeDetail.NewValue.Attributes)
+                                foreach (KeyValuePair<string, object> attribute in attributeDetail.NewValue.Attributes)
                                 {
                                     string fieldmetadata = "";
                                     string lookupId = "";
@@ -267,44 +401,6 @@ namespace AuditHistoryRollBack
             }
         }
 
-        private void UpdateMultipleRecords()
-        {
-            try
-            {
-                string fetchxml = string.Format(@"<fetch version='1.0' output-format='xml-platform' mapping='logical' distinct='false'>
-                                              <entity name='{0}'>
-                                                <attribute name='{1}' />
-                                                <order attribute='modifiedon' descending='true' />
-                                              </entity>
-                                            </fetch>", entitiesList.SelectedItem.ToString(), entitiesList.SelectedItem.ToString() + "id");
-
-                EntityCollection result = Service.RetrieveMultiple(new FetchExpression(fetchxml));
-
-            }
-            catch (InvalidPluginExecutionException ex)
-            {
-                MessageBox.Show($"An error occurred: {ex.Message}");
-            }
-            catch (FaultException<OrganizationServiceFault> ex)
-            {
-                MessageBox.Show($"An error occurred: {ex.Message}");
-            }
-            catch (TimeoutException ex)
-            {
-                MessageBox.Show($"An error occurred: {ex.Message}");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"An error occurred: {ex.Message}");
-            }
-        }
-
-        private Guid TrimGuid(string guid)
-        {
-            string stringguid = guid.Replace("{", string.Empty).Replace("}", string.Empty);
-            Guid updatedguid = new Guid(stringguid);
-            return updatedguid;
-        }
 
         private void ShowAuditHistory()
         {
@@ -321,13 +417,11 @@ namespace AuditHistoryRollBack
 
             if (dataGridView1.RowCount > 0)
             {
-                showNewestValues.Visible = true;
-                showNewestValues.Checked = false;
+                showNewestValues.Enabled = true;
             }
             else
             {
-                showNewestValues.Visible = false;
-                showNewestValues.Checked = false;
+                showNewestValues.Enabled = false;
             }
         }
 
@@ -338,7 +432,7 @@ namespace AuditHistoryRollBack
         }
 
         private string GetFieldValue(string attribute, object type, Entity entity, string value)
-        { 
+        {
 
             if (type is OptionSetValue)
             {
@@ -424,9 +518,9 @@ namespace AuditHistoryRollBack
                     {
                         List<DataGridViewRow> rows =
                             (from DataGridViewRow row in dataGridView1.SelectedRows
-                            where !row.IsNewRow
-                            orderby row.Index
-                            select row).ToList<DataGridViewRow>();
+                             where !row.IsNewRow
+                             orderby row.Index
+                             select row).ToList<DataGridViewRow>();
 
                         foreach (DataGridViewRow auditinfo in rows)
                         {
@@ -463,7 +557,7 @@ namespace AuditHistoryRollBack
                     Thread.Sleep(500);
                     LoadAuditHistory();
                 }
-            }) ;
+            });
         }
 
         private void UpdateAudit(IOrganizationService service, Entity entity, object type, string field, string newvalue, string oldvalue, string fieldmetadata, string lookupId)
@@ -509,7 +603,8 @@ namespace AuditHistoryRollBack
                 entity.Attributes[field] = null;
             }
             Service.Update(entity);
-        }     
+        }
+
 
         private void HideOldAuditRecords()
         {
@@ -517,10 +612,16 @@ namespace AuditHistoryRollBack
             dataGridView1.ClearSelection();
             dataGridView1.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
 
-            if (showNewestValues.Checked == true)
+            if(!Guid.TryParse(recordGuid.Text, out _))
+            {
+                return;
+            }
+
+
+            if (showNewestValues.Checked)
             {
                 WorkAsync(new WorkAsyncInfo
-                {                   
+                {
                     Message = "Showing latest Audit Records...",
                     Work = (bw, k) =>
                     {
@@ -575,7 +676,7 @@ namespace AuditHistoryRollBack
                 });
             }
             enableButtons();
-        }     
+        }
 
         private void rollbackbutton_Click(object sender, EventArgs e)
         {
@@ -603,6 +704,10 @@ namespace AuditHistoryRollBack
 
         private void showNewestValues_CheckedChanged(object sender, EventArgs e)
         {
+            mySettings.ShowNewestAuditsOnly =
+                showNewestValues.Checked;
+
+            SaveSettings();
             HideOldAuditRecords();
         }
 
@@ -620,5 +725,81 @@ namespace AuditHistoryRollBack
             rollbackbutton.Enabled = true;
             loadAuditButton.Enabled = true;
         }
+
+        private void recordGuid_KeyUp(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                LoadAuditHistory();
+            }
+        }
+
+        private void dataGridView1_SelectionChanged(object sender, EventArgs e)
+        {
+            if (dataGridView1.SelectedRows.Count == 0)
+            {
+                rollbackbutton.Enabled = false;
+            }
+            else
+            {
+                rollbackbutton.Enabled = true;
+            }
+
+        }
+
+        private void recordGuid_Click(object sender, EventArgs e)
+        {
+            if (GetGuidFromClipboard())
+            {
+                LoadAuditHistory();
+            }
+        }
+
+
+        private bool GetGuidFromClipboard()
+        {
+            if (autoCopyGuidFromClipboard.Checked)
+            {
+                var clipboard = Clipboard.GetText();
+
+                if (Guid.TryParse(clipboard, out _))
+                {
+                    recordGuid.Text = clipboard;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void entitiesList_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            SaveSettings();
+        }
+
+        private void autoCopyGuidFromClipboard_CheckedChanged(object sender, EventArgs e)
+        {
+            SaveSettings();
+        }
     }
+
+    // ============================================================================
+    // ============================================================================
+    // ============================================================================
+    public class AuditRecord
+    {
+        public Object AuditId { get; set; }
+        public Object CreatedOn { get; set; }
+        public string UserId { get; set; }
+        public string Action { get; set; }
+        public string Field { get; set; }
+        public string OldValue { get; set; }
+        public string NewValue { get; set; }
+        public object Type { get; set; }
+        public string FieldMetaData { get; set; }
+        public string LookupId { get; set; }
+
+    }
+
+
 }
