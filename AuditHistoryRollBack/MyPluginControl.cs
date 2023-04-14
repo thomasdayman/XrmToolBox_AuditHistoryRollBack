@@ -82,23 +82,26 @@ namespace AuditHistoryRollBack
         private void LoadSettings()
         {
             mySettings = null;
-            
+
             LogInfo("Loading settings now...");
 
             try
             {
                 SettingsManager.Instance.TryLoad(
-                    typeof(MyPluginControl), 
+                    typeof(MyPluginControl),
                     out mySettings);
 
-                showNewestValues.Checked =
-                    mySettings.ShowNewestAuditsOnly;
+                if (mySettings != null)
+                {
+                    showNewestValues.Checked =
+                        mySettings.ShowNewestAuditsOnly;
 
-                autoCopyGuidFromClipboard.Checked =
-                    mySettings.AutoCopyGuidFromClipboard;
+                    autoCopyGuidFromClipboard.Checked =
+                        mySettings.AutoCopyGuidFromClipboard;
+                }
 
             }
-            catch (InvalidOperationException) 
+            catch (InvalidOperationException)
             {
                 LogWarning("Settings could not be loaded!");
             }
@@ -109,7 +112,11 @@ namespace AuditHistoryRollBack
                 SaveSettings();
                 LogWarning("A new settings-file was created");
             }
-           
+            else
+            {
+                LogWarning("Settings Found: " + mySettings);
+            }
+
         }
 
 
@@ -260,7 +267,6 @@ namespace AuditHistoryRollBack
                     {
                         entitiesList.SelectedIndex = index;
                     }
-
                 }
             });
         }
@@ -286,10 +292,11 @@ namespace AuditHistoryRollBack
                     Message = "Loading Audit History...",
                     Work = (bw, d) => {
                         LoadAuditHistoryLogic();
-                        HideOldAuditRecords();
+                        //HideOldAuditRecords();
                     },
                     PostWorkCallBack = (d) =>
                     {
+                        HideOldAuditRecords();
                         ShowAuditHistory();
                         enableButtons();
                     }
@@ -608,15 +615,14 @@ namespace AuditHistoryRollBack
 
         private void HideOldAuditRecords()
         {
-            disableButtons();
-            dataGridView1.ClearSelection();
-            dataGridView1.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
-
-            if(!Guid.TryParse(recordGuid.Text, out _))
+            if (!Guid.TryParse(recordGuid.Text, out _))
             {
                 return;
             }
 
+            disableButtons();
+            dataGridView1.ClearSelection();
+            dataGridView1.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
 
             if (showNewestValues.Checked)
             {
