@@ -445,6 +445,10 @@ namespace AuditHistoryRollBack
             {
                 return entity.FormattedValues[attribute];
             }
+            else if (type is OptionSetValueCollection)
+            {
+                return entity.FormattedValues[attribute];
+            }
             else if (type is EntityReference)
             {
                 return entity.GetAttributeValue<EntityReference>(attribute.ToString()).Name;
@@ -476,6 +480,11 @@ namespace AuditHistoryRollBack
                     return EntityType;
                 }
                 return "";
+            }
+            if (type is OptionSetValueCollection)
+            {
+                // Join options together seperated by ;. This will be split before the update.
+                return string.Join(";", entity.GetAttributeValue<OptionSetValueCollection>(attribute).Select(x => x.Value.ToString()));
             }
             else
             {
@@ -575,6 +584,10 @@ namespace AuditHistoryRollBack
                 {
                     case OptionSetValue _:
                         entity.Attributes[field] = new OptionSetValue(Convert.ToInt32(fieldmetadata));
+                        break;
+                    case OptionSetValueCollection _:
+                        // The old values have been stored in the metadata ; delimited.
+                        entity.Attributes[field] = new OptionSetValueCollection(fieldmetadata.Split(';').Select(x => new OptionSetValue(Convert.ToInt32(x))).ToArray());
                         break;
                     case EntityReference _:
                         entity.Attributes[field] = new EntityReference(fieldmetadata, new Guid(lookupId));
